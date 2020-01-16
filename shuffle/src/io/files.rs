@@ -38,7 +38,7 @@ impl FileReader {
             file,
             pos: 0,
             seperator: 13, // New line character,
-            buffer: [u8; BUFFER_SIZE],
+            buffer: [0u8; BUFFER_SIZE],
             buf_pos: 0,
             buf_size: 0
         };
@@ -59,15 +59,32 @@ impl FileReader {
         } as u16;
         ReadState::Successful(())
     }
+
+    fn next_utf8_char(&mut self) -> u64 {
+        let mut buf = self.buffer[self.pos as usize..];
+        let b = unsafe { buf.get_unchecked(0) };
+        if b >> 7 != 1 {
+            return b as u64;
+        }
+        if b >> 5 == 6 { // 2 bytes inc. this
+            // TODO: Continue here!
+        } else if b >> 4 == 14 { // 3 bytes inc. this
+
+        } else if b >> 3 == 30 { // 4 bytes inc. this
+
+        }
+
+        unimplemented!()
+    }
 }
 
 impl DataSource for FileReader {
     fn next_line(&mut self) -> Result<Option<Box<dyn DataReference>>, String> {
         if self.buf_size == 0 {
-
+            self.refill_buffer();
         }
 
-        ()
+        unimplemented!()
     }
 
     fn pos(&self) -> u64 {
