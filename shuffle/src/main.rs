@@ -1,14 +1,16 @@
+mod io;
+
 fn main() {
     let matches = clap::App::new("")
         .name("shuffle")
-        .about("Shuffle line of files or steam input")
+        .about("Shuffle line of files or stream io")
         .get_matches();
-    /** TODO:
-        - File input
-        - Steam input
-        - CLI input
+    /* TODO:
+        - File io
+        - Stream io
+        - CLI io
         - Output file
-        - Output steam
+        - Output stream
         - Custom line termination
         - Line can occur multiple times
         - Custom random source
