@@ -5,7 +5,7 @@ pub trait DataSource {
 }
 
 pub trait DataReference {
-    fn read(&mut self) -> Result<&[u8], String>;
+    fn read(&mut self) -> Result<Vec<u8>, String>;
 }
 
 enum ReadState<T> {
