@@ -1,13 +1,11 @@
 mod files;
 
 pub trait DataSource {
-    fn next_line(&mut self) -> Option<Box<dyn DataReference>>;
-    fn pos(&self) -> u64;
-    fn shift(&mut self, n: i64) -> Result<(), ()>;
+    fn next_line(&mut self) -> ReadState<Box<dyn DataReference>>;x
 }
 
 pub trait DataReference {
-    fn read(&mut self) -> &[u8];
+    fn read(&mut self) -> Result<&[u8], String>;
 }
 
 enum ReadState<T> {
