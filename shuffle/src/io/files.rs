@@ -100,7 +100,7 @@ impl FileReader {
                 ReadState::Error(x) => return ReadState::Error(x)
             };
             if nb >> 6 != 2 {
-                return ReadState::Successful(0xFFFD);
+                return ReadState::Successful(0xFFFD); // Encoding this results in [EF, BF, BD] also known as �
             }
             out |= (nb as u32 & 0b111111) << (6 * (2 - i)) as u32;
         }

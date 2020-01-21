@@ -1,4 +1,4 @@
-mod files;
+pub mod files;
 
 pub trait DataSource {
     fn next_line(&mut self) -> ReadState<Box<dyn DataReference>>;x
