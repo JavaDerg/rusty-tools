@@ -1,11 +1,11 @@
 pub mod files;
 
 pub trait DataSource {
-    fn next_line(&mut self) -> ReadState<Box<dyn DataReference>>;x
+    fn next_line(&mut self) -> ReadState<Box<dyn DataReference>>;
 }
 
 pub trait DataReference {
-    fn read(&mut self) -> Result<&[u8], String>;
+    fn read(&mut self) -> Result<Vec<u8>, String>;
 }
 
 enum ReadState<T> {

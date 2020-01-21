@@ -127,7 +127,7 @@ impl DataSource for FileReader {
                         return ReadState::Successful(Box::new(FileRef {
                             owner: NonNull::from(self),
                             pos: starting_pos,
-                            len: pos - starting_pos,
+                            len: (pos - starting_pos) as usize,
                         }));
                     }
                     return ReadState::EndOfData;
@@ -136,12 +136,12 @@ impl DataSource for FileReader {
             };
             if c == self.seperator {
                 return ReadState::Successful(Box::new(FileRef {
-                    owner: NonNull::from(self),
+                    owner: unsafe { NonNull::new_unchecked(self) },
                     pos: starting_pos,
-                    len: match self.file.seek(SeekFrom::Current(0)) {
+                    len: (match self.file.seek(SeekFrom::Current(0)) {
                         Ok(x) => x,
                         Err(e) => return ReadState::Error(format!("Failed to get stream position"))
-                    } - starting_pos,
+                    } - starting_pos) as usize,
                 }));
             }
         }
@@ -152,28 +152,28 @@ pub struct FileRef {
     // This is a dangling pointer!!! (i think welp)
     owner: NonNull<FileReader>,
     pos: u64,
-    len: u64,
+    len: usize,
     /*, TODO: Implement this lol
        content: Option<Box<[u8]>> */
 }
 
 impl DataReference for FileRef {
-    fn read(&mut self) -> Result<Box<[u8]>, String> {
+    fn read(&mut self) -> Result<Vec<u8>, String> {
         let mut file = &unsafe { self.owner.as_mut() }.file;
         let cur_pos = match file.seek(SeekFrom::Current(0)) {
             Ok(x) => x,
             Err(e) => return Err(format!("Failed reading stream position: {}", e))
         };
-        if Err(e) = file.seek(SeekFrom::Start(self.pos)) {
+        if let Err(e) = file.seek(SeekFrom::Start(self.pos)) {
             return Err(format!("Failed setting stream position: {}", e));
         }
-        let mut buffer = [0u8, self.len];
-        match file.read(&buffer) {
+        let mut buffer = vec![0u8; self.len];
+        match file.read(buffer.as_mut()) {
             Ok(x) => {
                 if x < self.len as usize {
                     return Err(format!("Reading the file failed, size of returned bytes was to small. Expected: {} Got: {}", self.len, x));
                 }
-                Ok(Box::new(*buffer))
+                Ok(buffer)
             },
             Err(e) => Err(format!("Reading the file failed: {}", e))
         }
