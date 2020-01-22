@@ -1,26 +1,23 @@
-use crate::io::{DataSource, DataReference, ReadState};
+use crate::io::{DataSource, ReadState};
 use std::path::PathBuf;
-use std::cell::RefCell;
-use core::mem;
-use std::ptr::NonNull;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use crate::io::files::ReadState::EndOfData;
 
 pub const BUFFER_SIZE: usize = 65535;
 
 pub struct FileReader {
-    this: NonNull<Self>,
     path: PathBuf,
     file: File,
-    seperator: u32,
+    separator: u32,
     buffer: [u8; BUFFER_SIZE],
     buf_pos: u16,
     buf_size: u16,
+    references: Vec<FileRef>,
+    ref_pos: u32
 }
 
 impl FileReader {
-    pub fn new(path: String) -> Result<Self, String> {
+    pub fn new(path: String, cache: bool) -> Result<Self, String> {
         let mut pb = PathBuf::from(path);
         if !pb.exists() {
             return Err("File not found".to_string());
@@ -32,15 +29,22 @@ impl FileReader {
             }
         };
         let mut fr = FileReader {
-            this: unsafe { mem::MaybeUninit::uninit().assume_init() },
             path: Default::default(),
             file,
-            seperator: 13, // New line character,
+            separator: 13, // New line character,
             buffer: [0u8; BUFFER_SIZE],
             buf_pos: 0,
             buf_size: 0,
+            references: Vec::new(),
+            ref_pos: 0
         };
-        fr.this = NonNull::from(&mut fr);
+        loop {
+            fr.references.push(match fr.read_next_line_internal(cache) {
+                ReadState::Successful(line) => line,
+                ReadState::EndOfData => break,
+                ReadState::Error(e) => return Err(e)
+            });
+        }
         Ok(fr)
     }
 
@@ -107,10 +111,8 @@ impl FileReader {
 
         ReadState::Successful(out)
     }
-}
 
-impl DataSource for FileReader {
-    fn next_line(&mut self) -> ReadState<Box<dyn DataReference>> {
+    pub(in self) fn read_next_line_internal(&mut self, cache: bool) -> ReadState<FileRef> {
         let starting_pos = match self.file.seek(SeekFrom::Current(0)) {
             Ok(x) => x,
             Err(e) => return ReadState::Error(format!("Failed to get stream position"))
@@ -124,58 +126,100 @@ impl DataSource for FileReader {
                         Err(e) => return ReadState::Error(format!("Failed to get stream position"))
                     };
                     if starting_pos < pos {
-                        return ReadState::Successful(Box::new(FileRef {
-                            owner: NonNull::from(self),
+                        let len = pos - starting_pos;
+                        return ReadState::Successful(FileRef {
                             pos: starting_pos,
-                            len: (pos - starting_pos) as usize,
-                        }));
+                            len: len as usize,
+                            content: if cache {
+                                if let Err(e) = file.seek(SeekFrom::Current(-len as i64)) {
+                                    return ReadState::Error(format!("Failed setting stream position: {}", e));
+                                }
+                                let mut buffer = vec![0u8; self.len];
+                                match file.read(buffer.as_mut()) {
+                                    Ok(x) => {
+                                        if x < len as usize {
+                                            return ReadState::Error(format!("Reading the file failed, size of returned bytes was to small. Expected: {} Got: {}", self.len, x));
+                                        }
+                                        Some(buffer)
+                                    }
+                                    Err(e) => ReadState::Error(format!("Reading the file failed: {}", e))
+                                }
+                            } else { None }
+                        });
                     }
                     return ReadState::EndOfData;
                 }
                 ReadState::Error(x) => return ReadState::Error(x)
             };
-            if c == self.seperator {
-                return ReadState::Successful(Box::new(FileRef {
-                    owner: unsafe { NonNull::new_unchecked(self) },
+            let len = (match self.file.seek(SeekFrom::Current(0)) {
+                Ok(x) => x,
+                Err(e) => return ReadState::Error(format!("Failed to get stream position"))
+            } - starting_pos) as usize;
+            if c == self.separator {
+                return ReadState::Successful(FileRef {
                     pos: starting_pos,
-                    len: (match self.file.seek(SeekFrom::Current(0)) {
-                        Ok(x) => x,
-                        Err(e) => return ReadState::Error(format!("Failed to get stream position"))
-                    } - starting_pos) as usize,
-                }));
+                    len,
+                    content: if cache {
+                        if let Err(e) = file.seek(SeekFrom::Current(-len as i64)) {
+                            return ReadState::Error(format!("Failed setting stream position: {}", e));
+                        }
+                        let mut buffer = vec![0u8; self.len];
+                        match file.read(buffer.as_mut()) {
+                            Ok(x) => {
+                                if x < len as usize {
+                                    return ReadState::Error(format!("Reading the file failed, size of returned bytes was to small. Expected: {} Got: {}", self.len, x));
+                                }
+                                Some(buffer)
+                            }
+                            Err(e) => ReadState::Error(format!("Reading the file failed: {}", e))
+                        }
+                    } else { None }
+                });
             }
         }
     }
 }
 
-pub struct FileRef {
-    // This is a dangling pointer!!! (i think welp)
-    owner: NonNull<FileReader>,
-    pos: u64,
-    len: usize,
-    /*, TODO: Implement this lol
-       content: Option<Box<[u8]>> */
+impl DataSource for FileReader {
+    fn next_line(&mut self) -> ReadState<Vec<u8>> {
+        if self.ref_pos >= self.references.len() as u32 {
+            return ReadState::EndOfData;
+        }
+        let r: &FileRef = unsafe { self.references.get_unchecked(self.ref_pos) };
+        self.ref_pos += 1;
+        ReadState::Successful(match r.read(self) {
+            ReadState::Successful(x) => x,
+            ReadState::EndOfData => panic!("Reading a FileRef returned EndOfData. This is a invalid state!"),
+            ReadState::Error(e) => return ReadState::Error(e)
+        })
+    }
 }
 
-impl DataReference for FileRef {
-    fn read(&mut self) -> Result<Vec<u8>, String> {
-        let mut file = &unsafe { self.owner.as_mut() }.file;
+pub struct FileRef {
+    pos: u64,
+    len: usize,
+    content: Option<Vec<u8>>
+}
+
+impl FileRef {
+    fn read(&self, fr: &mut FileReader) -> ReadState<Vec<u8>> {
+        let file = &mut fr.file;
         let cur_pos = match file.seek(SeekFrom::Current(0)) {
             Ok(x) => x,
-            Err(e) => return Err(format!("Failed reading stream position: {}", e))
+            Err(e) => return ReadState::Error(format!("Failed reading stream position: {}", e))
         };
         if let Err(e) = file.seek(SeekFrom::Start(self.pos)) {
-            return Err(format!("Failed setting stream position: {}", e));
+            return ReadState::Error(format!("Failed setting stream position: {}", e));
         }
         let mut buffer = vec![0u8; self.len];
         match file.read(buffer.as_mut()) {
             Ok(x) => {
                 if x < self.len as usize {
-                    return Err(format!("Reading the file failed, size of returned bytes was to small. Expected: {} Got: {}", self.len, x));
+                    return ReadState::Error(format!("Reading the file failed, size of returned bytes was to small. Expected: {} Got: {}", self.len, x));
                 }
-                Ok(buffer)
-            },
-            Err(e) => Err(format!("Reading the file failed: {}", e))
+                ReadState::Successful(buffer)
+            }
+            Err(e) => ReadState::Error(format!("Reading the file failed: {}", e))
         }
     }
 }

@@ -1,6 +1,6 @@
 mod io;
 
-use crate::io::files::{FileReader, FileRef};
+use crate::io::files::FileReader;
 use crate::io::{DataSource, ReadState};
 
 fn main() {
@@ -19,11 +19,5 @@ fn main() {
         - Custom random source
         - Input range
         - Amount of lines to output
-    */
-
-    let mut fr = FileReader::new("".to_string()).unwrap();
-    if let ReadState::Succsessfull(nl) = fr.next_line() {
-        let dr = *nl as FileRef;
-
-    }
+    *
 }

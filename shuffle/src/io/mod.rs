@@ -1,14 +1,10 @@
 pub mod files;
 
 pub trait DataSource {
-    fn next_line(&mut self) -> ReadState<Box<dyn DataReference>>;
+    fn next_line(&mut self) -> ReadState<Vec<u8>>;
 }
 
-pub trait DataReference {
-    fn read(&mut self) -> Result<Vec<u8>, String>;
-}
-
-enum ReadState<T> {
+pub enum ReadState<T> {
     Successful(T),
     EndOfData,
     Error(String)
