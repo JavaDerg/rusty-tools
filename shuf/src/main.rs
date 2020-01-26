@@ -4,12 +4,11 @@ use crate::io::files::FileReader;
 use crate::io::{DataSource, ReadState};
 
 fn main() {
-    let matches = clap::App::new("")
-        .name("shuffle")
+    let matches = clap::App::new("shuf")
+        .name("shuf")
         .about("Shuffle line of files or stream io")
         .get_matches();
     /* TODO:
-        - File io
         - Stream io
         - CLI io
         - Output file
